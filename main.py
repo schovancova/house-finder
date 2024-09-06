@@ -4,125 +4,88 @@ import json
 import os
 
 import requests
-from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from openai import OpenAI
+from notifiers import get_notifier
 
 
-def scrape_page(soup):
-    anchor_tags = soup.find_all('a', {'class': 'c-products__link'}, href=True)
-    parcel_links = []
-    for tag in anchor_tags:
-        href = tag['href']
-        full_link = f"https://reality.idnes.cz{href}" if href.startswith('/') else href
-        if full_link not in visited_links:
-            visited_links.add(full_link)
-            parcel_links.append(full_link)
-    return parcel_links
-
-
-def scrape_description(link):
-    response = requests.get(link)
-    if response.status_code == 200:
-        soup = BeautifulSoup(response.content, 'html.parser')
-        description_tag = soup.find('div', {'class': 'm-auto'})
-        if description_tag:
-            return ' '.join(description_tag.text.split())
-    return ""
-
-
-def get_next_page_url(soup):
-    next_page = soup.find('a', {'class': 'next'})
-    if next_page and 'href' in next_page.attrs:
-        return f"https://reality.idnes.cz{next_page['href']}" if next_page['href'].startswith('/') else next_page[
-            'href']
-    return None
-
-
-def send_slack(message_json):
-    # todo
-    pass
-
-
-# Main scraping function with pagination
-def send_to_gpt(parcel_links):
-    key = api_key
-    client = OpenAI(
-        organization=org_id,
-        api_key=key
-    )
-    for parcel_link in parcel_links:
-        description = scrape_description(parcel_link)
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are given a description of a parcel. Understand it and provide a minified JSON "
-                               "with NO formatting or special tags on"
-                               "output. JSON fields: area, price, width (street width, if given), location,"
-                               "distance_from_Brno (in km), electricity, water, sewage_system"},
-                {
-                    "role": "user",
-                    "content": description}
-            ],
-            model="gpt-4o-mini",
-        )
-        r = chat_completion.choices[0].message.content
-        r = json.loads(r)
-        print(r)
-
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"where is {r.get('location', '')} directionally positioned in relation to Brno? give "
-                               f"me only direction name"}
-            ],
-            model="gpt-4o-mini",
-        )
-        r2 = chat_completion.choices[0].message.content
-        print(r2)
-        # todo read config, check if parcel fits with config ...
-        send_slack(r)
-    pass
+def send_slack(hook, subject, message, url):
+    slack = get_notifier("slack")
+    slack.notify(message=f"{subject} {message} {url}", webhook_url=hook)
 
 
 def scrape_all_pages(start_url):
-    current_url = start_url
-    while current_url:
-        print(f"Scraping page: {current_url}")
-        response = requests.get(current_url)
+    result = []
+    page = 1
+    while True:
+        print(f"Scraping page: {start_url}&page={page}")
+        response = requests.get(start_url + f"&page={page}")
         if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'html.parser')
+            data = json.loads(response.content)
+            estates = data['_embedded']['estates']
+            if not estates:
+                break
+            else:
+                for estate in estates:
+                    result.append({
+                        'id': estate['hash_id'],
+                        'price': estate['price'],
+                        'location': estate['locality'],
+                        'is_auction': estate['is_auction'],
+                        'labels': estate['labelsAll'][0],
+                        'name': estate['name'],
+                        'link': f"https://www.sreality.cz/detail/prodej/dum/rodinny/{estate['seo']['locality']}/{estate['hash_id']}",
+                        'images': [img['href'] for img in estate['_links']['images']],
+                    })
+                page += 1
+
         else:
             print("failed")
             exit(0)
-        parcel_links = scrape_page(soup)
-        send_to_gpt(parcel_links)
-        current_url = get_next_page_url(soup)
+    return result
 
 
-def save_visited_links(links):
+def save_houses(cache_file, links, new_hook, update_hook):
+    if os.path.exists(cache_file):
+        with open(cache_file, 'r') as file:
+            visited_links = json.load(file)
+            if not isinstance(visited_links, dict):
+                visited_links = {}
+    else:
+        visited_links = {}
+
+    for house in links:
+        house_id = str(house['id'])
+        body = f"""\n
+        * *Price*: {house['price']:,} Kc
+        * *Location*: {house['location']}
+        * *Photo*: {house['images'][0]}
+        """
+        if house_id not in visited_links:
+            visited_links[house_id] = house
+            send_slack(new_hook, house['name'], body, house['link'])
+        else:
+            if house['price'] != visited_links[house_id]['price']:
+                send_slack(update_hook, "House price update", f"From {visited_links[house_id]['price']:,} to {house['price']:,}", house['link'])
+
     with open(cache_file, 'w') as file:
-        json.dump(list(links), file)
+        json.dump(visited_links, file, indent=4)
 
 
 if __name__ == "__main__":
-    # todo create classes form this from file, looks like a massive mess
     load_dotenv()
-    api_key = os.getenv('API_KEY')
-    org_id = os.getenv('ORG_ID')
-    if not api_key or not org_id:
-        raise Exception("Missing ORG_ID or API_KEY. Please add .env file")
-    # todo more URLs here centered around places we like using filters
-    base_url = "https://reality.idnes.cz/s/prodej/pozemky/rajhrad-okres-brno-venkov/"
+    urls = [
+        "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&distance=10&locality_district_id=72%7C73&locality_region_id=14&per_page=60&region=Rajhrad&region_entity_id=5820&region_entity_type=municipality", # rajhrad
+        "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&distance=10&locality_district_id=73%7C72&locality_region_id=14&per_page=60&region=%C5%A0lapanice&region_entity_id=5838&region_entity_type=municipality" # slapanice
+    ]
+    filtered_urls = [
+        # more than 100m2 house area, more than 300m2 land, good status filters
+        "https://www.sreality.cz/api/cs/v2/estates?building_condition=1%7C4%7C5%7C6&category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&czk_price_summary_order2=0%7C15000000&distance=10&estate_area=300%7C10000000000&locality_district_id=72%7C73&locality_region_id=14&per_page=60&region=Rajhrad&region_entity_id=5820&region_entity_type=municipality&usable_area=100%7C10000000000",  # rajhrad
+        "https://www.sreality.cz/api/cs/v2/estates?building_condition=1%7C4%7C5%7C6&category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&czk_price_summary_order2=0%7C15000000&distance=10&estate_area=300%7C10000000000&locality_district_id=73%7C72&locality_region_id=14&per_page=60&region=%C5%A0lapanice&region_entity_id=5838&region_entity_type=municipality&usable_area=100%7C10000000000"  # slapanice
+    ]
+    for base_url in urls:
+        houses = scrape_all_pages(base_url)
+        save_houses("visited_houses.json", houses, os.getenv('SLACK_WEBHOOK_NEW'), os.getenv('SLACK_WEBHOOK_UPDATE'))
 
-    cache_file = "visited_links.json"
-    if os.path.exists(cache_file):
-        with open(cache_file, 'r') as f:
-            visited_links = set(json.load(f))
-    else:
-        visited_links = set()
-
-    scrape_all_pages(base_url)
-    save_visited_links(visited_links)
+    for filtered_url in filtered_urls:
+        houses = scrape_all_pages(filtered_url)
+        save_houses("visited_houses_filtered.json", houses, os.getenv('SLACK_WEBHOOK_FILTERED'), os.getenv('SLACK_WEBHOOK_FILTERED_UPDATE'))
