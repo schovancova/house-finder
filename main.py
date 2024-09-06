@@ -77,7 +77,7 @@ def save_houses(links, new_hook, update_hook):
             send_slack(new_hook, house['name'], body, house['link'])
         else:
             if house['price'] != visited_links[house_id]['price']:
-                r.set(house_id, house)
+                r.set(house_id, json.dumps(house))
                 visited_links[house_id] = house
                 send_slack(update_hook, "House price update",
                            f"From {visited_links[house_id]['price']:,} to {house['price']:,}", house['link'])
