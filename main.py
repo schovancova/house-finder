@@ -3,6 +3,7 @@
 import json
 import os
 
+import redis
 import requests
 from dotenv import load_dotenv
 from notifiers import get_notifier
@@ -44,12 +45,22 @@ def scrape_all_pages(start_url):
     return result
 
 
-def save_houses(cache_file, links, new_hook, update_hook):
-    if os.path.exists(cache_file):
-        with open(cache_file, 'r') as file:
-            visited_links = json.load(file)
-            if not isinstance(visited_links, dict):
-                visited_links = {}
+def save_houses(links, new_hook, update_hook):
+    keys = r.keys('*')  # Fetch all keys
+    keys = [key.decode('utf-8') for key in keys]  # Decode keys from bytes to string
+
+    if keys:
+        # Fetch values for all the keys using mget
+        values = r.mget(keys)  # Get the values for all keys
+
+        visited_links = {}
+        for key, value in zip(keys, values):
+            try:
+                # Try to decode JSON
+                json_value = json.loads(value.decode('utf-8')) if value else None
+                visited_links[key] = json_value
+            except json.JSONDecodeError:
+                pass
     else:
         visited_links = {}
 
@@ -62,33 +73,49 @@ def save_houses(cache_file, links, new_hook, update_hook):
         """
         if house_id not in visited_links:
             visited_links[house_id] = house
+            r.set(house_id, json.dumps(house))
             send_slack(new_hook, house['name'], body, house['link'])
         else:
             if house['price'] != visited_links[house_id]['price']:
-                send_slack(update_hook, "House price update", f"From {visited_links[house_id]['price']:,} to {house['price']:,}", house['link'])
-
-    with open(cache_file, 'w') as file:
-        json.dump(visited_links, file, indent=4)
+                r.set(house_id, house)
+                visited_links[house_id] = house
+                send_slack(update_hook, "House price update",
+                           f"From {visited_links[house_id]['price']:,} to {house['price']:,}", house['link'])
 
 
 if __name__ == "__main__":
     load_dotenv()
+    redis_host = os.getenv('REDIS_HOST')
+    redis_port = os.getenv('REDIS_PORT')
+    redis_password = os.getenv('REDIS_PASSWORD')
+    if not redis_port or not redis_password or not redis_host:
+        raise Exception("Please provide Redis credentials")
+    r = redis.Redis(
+        host=redis_host,
+        port=redis_port,
+        password=redis_password,
+    )
+
     if not os.getenv('SLACK_WEBHOOK_NEW') or not os.getenv('SLACK_WEBHOOK_UPDATE'):
         raise Exception("Please provide minimal webhooks")
 
     urls = [
-        "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&distance=10&locality_district_id=72%7C73&locality_region_id=14&per_page=60&region=Rajhrad&region_entity_id=5820&region_entity_type=municipality", # rajhrad
-        "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&distance=10&locality_district_id=73%7C72&locality_region_id=14&per_page=60&region=%C5%A0lapanice&region_entity_id=5838&region_entity_type=municipality" # slapanice
+        "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&distance=10&locality_district_id=72%7C73&locality_region_id=14&per_page=60&region=Rajhrad&region_entity_id=5820&region_entity_type=municipality",
+        # rajhrad
+        "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&distance=10&locality_district_id=73%7C72&locality_region_id=14&per_page=60&region=%C5%A0lapanice&region_entity_id=5838&region_entity_type=municipality"
+        # slapanice
     ]
     filtered_urls = [
         # more than 100m2 house area, more than 300m2 land, good status filters
-        "https://www.sreality.cz/api/cs/v2/estates?building_condition=1%7C4%7C5%7C6&category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&czk_price_summary_order2=0%7C15000000&distance=10&estate_area=300%7C10000000000&locality_district_id=72%7C73&locality_region_id=14&per_page=60&region=Rajhrad&region_entity_id=5820&region_entity_type=municipality&usable_area=100%7C10000000000",  # rajhrad
-        "https://www.sreality.cz/api/cs/v2/estates?building_condition=1%7C4%7C5%7C6&category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&czk_price_summary_order2=0%7C15000000&distance=10&estate_area=300%7C10000000000&locality_district_id=73%7C72&locality_region_id=14&per_page=60&region=%C5%A0lapanice&region_entity_id=5838&region_entity_type=municipality&usable_area=100%7C10000000000"  # slapanice
+        "https://www.sreality.cz/api/cs/v2/estates?building_condition=1%7C4%7C5%7C6&category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&czk_price_summary_order2=0%7C15000000&distance=10&estate_area=300%7C10000000000&locality_district_id=72%7C73&locality_region_id=14&per_page=60&region=Rajhrad&region_entity_id=5820&region_entity_type=municipality&usable_area=100%7C10000000000",
+        # rajhrad
+        "https://www.sreality.cz/api/cs/v2/estates?building_condition=1%7C4%7C5%7C6&category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&czk_price_summary_order2=0%7C15000000&distance=10&estate_area=300%7C10000000000&locality_district_id=73%7C72&locality_region_id=14&per_page=60&region=%C5%A0lapanice&region_entity_id=5838&region_entity_type=municipality&usable_area=100%7C10000000000"
+        # slapanice
     ]
-    for base_url in urls:
-        houses = scrape_all_pages(base_url)
-        save_houses("visited_houses.json", houses, os.getenv('SLACK_WEBHOOK_NEW'), os.getenv('SLACK_WEBHOOK_UPDATE'))
-
     for filtered_url in filtered_urls:
         houses = scrape_all_pages(filtered_url)
-        save_houses("visited_houses_filtered.json", houses, os.getenv('SLACK_WEBHOOK_FILTERED'), os.getenv('SLACK_WEBHOOK_FILTERED_UPDATE'))
+        save_houses(houses, os.getenv('SLACK_WEBHOOK_FILTERED'), os.getenv('SLACK_WEBHOOK_FILTERED_UPDATE'))
+
+    for base_url in urls:
+        houses = scrape_all_pages(base_url)
+        save_houses(houses, os.getenv('SLACK_WEBHOOK_NEW'), os.getenv('SLACK_WEBHOOK_UPDATE'))
