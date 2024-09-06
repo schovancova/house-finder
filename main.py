@@ -73,6 +73,9 @@ def save_houses(cache_file, links, new_hook, update_hook):
 
 if __name__ == "__main__":
     load_dotenv()
+    if not os.getenv('SLACK_WEBHOOK_NEW') or not os.getenv('SLACK_WEBHOOK_UPDATE'):
+        raise Exception("Please provide minimal webhooks")
+
     urls = [
         "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&distance=10&locality_district_id=72%7C73&locality_region_id=14&per_page=60&region=Rajhrad&region_entity_id=5820&region_entity_type=municipality", # rajhrad
         "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&distance=10&locality_district_id=73%7C72&locality_region_id=14&per_page=60&region=%C5%A0lapanice&region_entity_id=5838&region_entity_type=municipality" # slapanice
