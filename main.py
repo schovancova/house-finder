@@ -78,7 +78,7 @@ def save_houses(links, new_hook, update_hook):
         body = f"""\n
         * *Price*: {house['price']:,} Kc
         * *Location*: {house['location']}
-        * *Photo*: {house['images'][0]}
+        * *Photo*: {house['images']}
         """
         if house_id not in visited_links:
             visited_links[house_id] = house
