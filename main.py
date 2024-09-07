@@ -2,6 +2,7 @@
 """Main script"""
 import json
 import os
+import time
 
 import redis
 import requests
@@ -17,9 +18,17 @@ def send_slack(hook, subject, message, url):
 def scrape_all_pages(start_url):
     result = []
     page = 1
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36",
+    }
     while True:
-        print(f"Scraping page: {start_url}&page={page}")
-        response = requests.get(start_url + f"&page={page}")
+        if page > 1:
+            current_url = start_url + f"&page={page}"
+        else:
+            current_url = start_url
+        print(f"Scraping page: {current_url}")
+
+        response = requests.get(current_url, headers=headers)
         if response.status_code == 200:
             data = json.loads(response.content)
             estates = data['_embedded']['estates']
@@ -35,7 +44,7 @@ def scrape_all_pages(start_url):
                         'labels': estate['labelsAll'][0],
                         'name': estate['name'],
                         'link': f"https://www.sreality.cz/detail/prodej/dum/rodinny/{estate['seo']['locality']}/{estate['hash_id']}",
-                        'images': [img['href'] for img in estate['_links']['images']],
+                        'images': estate['_links']['images'][0]['href'],
                     })
                 page += 1
 
