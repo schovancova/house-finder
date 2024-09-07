@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 
 
 def get_image(estate_data):
@@ -9,8 +10,15 @@ def get_image(estate_data):
     return None
 
 
+def get_days_since_first_seen(first_seen):
+    timestamp_dt = datetime.fromtimestamp(first_seen)
+    now = datetime.now()
+    difference = now - timestamp_dt
+    return difference.days
+
+
 class Estate:
-    def __init__(self, estate_data):
+    def __init__(self, estate_data, first_seen=None):
         self.id = str(estate_data.get('hash_id'))
         self.price = estate_data.get('price')
         self.location = estate_data.get('locality')
@@ -20,6 +28,7 @@ class Estate:
         self.link = self.generate_link(estate_data)
         self.images = get_image(estate_data)
         self.last_seen = time.time()
+        self.first_seen = first_seen or time.time()
 
     def generate_link(self, estate_data):
         """Generate the link for the estate"""
@@ -40,11 +49,13 @@ class Estate:
             'link': self.link,
             'images': self.images,
             'last_seen': self.last_seen,
+            'first_seen': self.first_seen,
         }
 
     def pretty_print_slack(self):
         """Format the estate data for posting to Slack."""
         price_display = "By Request" if self.price in [0, 1] else f"{self.price:,} Kc"
+        days_since_first_seen = get_days_since_first_seen(self.first_seen)
 
         body = f"""
                 *🏠 {self.name}*
@@ -54,6 +65,7 @@ class Estate:
                 * *Label*: {self.labels if self.labels else "N/A"}
                 * *Photo*: {self.images}
                 * *Link*: {self.link}
+                * *First seen*: {days_since_first_seen} days ago
                 """
         return body
 

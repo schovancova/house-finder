@@ -5,6 +5,7 @@ import os
 
 from dotenv import load_dotenv
 
+from model.Estate import get_days_since_first_seen
 from model.Notifier import Notifier
 from model.RedisHandler import RedisHandler
 from model.Scraper import Scraper
@@ -16,6 +17,8 @@ def save_houses(links, redis_handler, new_hook, update_hook):
         if not visited_links.get(house.id):
             new_hook.send_slack(house.name, house.pretty_print_slack())
         else:
+            if visited_links[house.id].get('first_seen'):
+                house.first_seen = visited_links[house.id]['first_seen']
             if house.price != visited_links[house.id]['price']:
                 update_hook.send_slack("House price update",
                                        f"From {visited_links[house.id]['price']:,} to {house.price:,}. {house.link}")
@@ -60,7 +63,9 @@ def remove_old_houses(redis_handler, sold_webook):
             if last_seen_datetime.timestamp() < three_days_ago_timestamp:
                 redis_handler.r.delete(house_id)
                 print(f"Removed old house: {house_id}")
-                sold_webook.send_slack("House was sold or removed", json.dumps(house_data))
+                sold_webook.send_slack(
+                    f"House was sold or removed, first seen {get_days_since_first_seen(house_data.get('first_seen'))} days ago",
+                    json.dumps(house_data))
 
 
 if __name__ == "__main__":
