@@ -1,131 +1,108 @@
 #!/usr/bin/env python3
-"""Main script"""
+import datetime
 import json
 import os
-import time
 
-import redis
-import requests
 from dotenv import load_dotenv
-from notifiers import get_notifier
+
+from model.Notifier import Notifier
+from model.RedisHandler import RedisHandler
+from model.Scraper import Scraper
 
 
-def send_slack(hook, subject, message, url):
-    slack = get_notifier("slack")
-    slack.notify(message=f"{subject} {message} {url}", webhook_url=hook)
-
-
-def scrape_all_pages(start_url):
-    result = []
-    page = 1
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36",
-    }
-    while True:
-        if page > 1:
-            current_url = start_url + f"&page={page}"
-        else:
-            current_url = start_url
-        print(f"Scraping page: {current_url}")
-
-        response = requests.get(current_url, headers=headers)
-        if response.status_code == 200:
-            data = json.loads(response.content)
-            estates = data['_embedded']['estates']
-            if not estates:
-                break
-            else:
-                for estate in estates:
-                    result.append({
-                        'id': estate['hash_id'],
-                        'price': estate['price'],
-                        'location': estate['locality'],
-                        'is_auction': estate['is_auction'],
-                        'labels': estate['labelsAll'][0],
-                        'name': estate['name'],
-                        'link': f"https://www.sreality.cz/detail/prodej/dum/rodinny/{estate['seo']['locality']}/{estate['hash_id']}",
-                        'images': estate['_links']['images'][0]['href'],
-                    })
-                page += 1
-
-        else:
-            print("failed")
-            exit(0)
-    return result
-
-
-def save_houses(links, new_hook, update_hook):
-    keys = r.keys('*')  # Fetch all keys
-    keys = [key.decode('utf-8') for key in keys]  # Decode keys from bytes to string
-
-    if keys:
-        # Fetch values for all the keys using mget
-        values = r.mget(keys)  # Get the values for all keys
-
-        visited_links = {}
-        for key, value in zip(keys, values):
-            try:
-                # Try to decode JSON
-                json_value = json.loads(value.decode('utf-8')) if value else None
-                visited_links[key] = json_value
-            except json.JSONDecodeError:
-                pass
-    else:
-        visited_links = {}
-
+def save_houses(links, redis_handler, new_hook, update_hook):
+    visited_links = redis_handler.load_existing_keys()
     for house in links:
-        house_id = str(house['id'])
-        body = f"""\n
-        * *Price*: {house['price']:,} Kc
-        * *Location*: {house['location']}
-        * *Photo*: {house['images']}
-        """
-        if house_id not in visited_links:
-            visited_links[house_id] = house
-            r.set(house_id, json.dumps(house))
-            send_slack(new_hook, house['name'], body, house['link'])
+        if not visited_links[house.id]:
+            new_hook.send_slack(house.name, house.pretty_print_slack())
         else:
-            if house['price'] != visited_links[house_id]['price']:
-                r.set(house_id, json.dumps(house))
-                visited_links[house_id] = house
-                send_slack(update_hook, "House price update",
-                           f"From {visited_links[house_id]['price']:,} to {house['price']:,}", house['link'])
+            if house.price != visited_links[house.id]['price']:
+                update_hook.send_slack("House price update",
+                                       f"From {visited_links[house.id]['price']:,} to {house.price:,}. {house.link}")
+        redis_handler.save_house(house)  # save every time to update the timestamp
+
+
+def check_slack_webhooks():
+    """Check if necessary Slack webhooks are provided in environment variables."""
+    webhook_new = os.getenv('SLACK_WEBHOOK_NEW')
+    webhook_update = os.getenv('SLACK_WEBHOOK_UPDATE')
+    webhook_filtered = os.getenv('SLACK_WEBHOOK_FILTERED')
+    webhook_filtered_update = os.getenv('SLACK_WEBHOOK_FILTERED_UPDATE')
+    webhook_sold = os.getenv('SOLD_WEBHOOK')
+
+    if not webhook_new or not webhook_update:
+        raise Exception("Please provide minimal Slack webhooks (SLACK_WEBHOOK_NEW, SLACK_WEBHOOK_UPDATE)")
+
+    if not webhook_filtered or not webhook_filtered_update or not webhook_sold:
+        raise Exception(
+            "Please provide Slack webhooks for filtered houses (SLACK_WEBHOOK_FILTERED, "
+            "SLACK_WEBHOOK_FILTERED_UPDATE, SOLD_WEBHOOK)")
+
+    return webhook_new, webhook_update, webhook_filtered, webhook_filtered_update, webhook_sold
+
+
+def remove_old_houses(redis_handler, sold_webook):
+    """Remove houses that haven't been updated for over 3 days."""
+    three_days_ago = datetime.datetime.now() - datetime.timedelta(days=3)
+    three_days_ago_timestamp = three_days_ago.timestamp()
+
+    # Retrieve all houses from Redis, this is much more efficient than going one by one due to my cheap tier of redis :c
+    all_houses = redis_handler.load_existing_keys()
+
+    for house_id, house_data in all_houses.items():
+        last_seen = house_data.get('last_seen')
+        if last_seen is not None:
+            try:
+                # Convert the Unix timestamp to a datetime object
+                last_seen_datetime = datetime.datetime.fromtimestamp(float(last_seen))
+            except ValueError:
+                continue  # Skip if the timestamp conversion fails
+            if last_seen_datetime.timestamp() < three_days_ago_timestamp:
+                redis_handler.r.delete(house_id)
+                print(f"Removed old house: {house_id}")
+                sold_webook.send_slack("House was sold or removed", json.dumps(house_data))
 
 
 if __name__ == "__main__":
     load_dotenv()
-    redis_host = os.getenv('REDIS_HOST')
-    redis_port = os.getenv('REDIS_PORT')
-    redis_password = os.getenv('REDIS_PASSWORD')
-    if not redis_port or not redis_password or not redis_host:
-        raise Exception("Please provide Redis credentials")
-    r = redis.Redis(
-        host=redis_host,
-        port=redis_port,
-        password=redis_password,
-    )
 
-    if not os.getenv('SLACK_WEBHOOK_NEW') or not os.getenv('SLACK_WEBHOOK_UPDATE'):
-        raise Exception("Please provide minimal webhooks")
+    # Initialize Redis handler
+    redis_handler = RedisHandler()
 
+    # Check Slack webhooks
+    slack_webhook_new, slack_webhook_update, slack_webhook_filtered, slack_webhook_filtered_update, slack_webhook_sold = check_slack_webhooks()
+
+    # Initialize Notifiers
+    new_house_notifier = Notifier(slack_webhook_new)
+    update_house_notifier = Notifier(slack_webhook_update)
+    filtered_house_notifier = Notifier(slack_webhook_filtered)
+    filtered_update_notifier = Notifier(slack_webhook_filtered_update)
+    sold_notifier = Notifier(slack_webhook_sold)
+
+    # Initialize scraper
+    scraper = Scraper()
+
+    # Define URLs
     urls = [
         "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&distance=10&locality_district_id=72%7C73&locality_region_id=14&per_page=60&region=Rajhrad&region_entity_id=5820&region_entity_type=municipality",
-        # rajhrad
         "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&distance=10&locality_district_id=73%7C72&locality_region_id=14&per_page=60&region=%C5%A0lapanice&region_entity_id=5838&region_entity_type=municipality"
-        # slapanice
     ]
     filtered_urls = [
-        # more than 100m2 house area, more than 300m2 land, good status filters
         "https://www.sreality.cz/api/cs/v2/estates?building_condition=1%7C4%7C5%7C6&category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&czk_price_summary_order2=0%7C15000000&distance=10&estate_area=300%7C10000000000&locality_district_id=72%7C73&locality_region_id=14&per_page=60&region=Rajhrad&region_entity_id=5820&region_entity_type=municipality&usable_area=100%7C10000000000",
-        # rajhrad
         "https://www.sreality.cz/api/cs/v2/estates?building_condition=1%7C4%7C5%7C6&category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&czk_price_summary_order2=0%7C15000000&distance=10&estate_area=300%7C10000000000&locality_district_id=73%7C72&locality_region_id=14&per_page=60&region=%C5%A0lapanice&region_entity_id=5838&region_entity_type=municipality&usable_area=100%7C10000000000"
-        # slapanice
     ]
-    for filtered_url in filtered_urls:
-        houses = scrape_all_pages(filtered_url)
-        save_houses(houses, os.getenv('SLACK_WEBHOOK_FILTERED'), os.getenv('SLACK_WEBHOOK_FILTERED_UPDATE'))
 
+    # Scrape filtered URLs first
+    for filtered_url in filtered_urls:
+        houses = scraper.scrape_all_pages(filtered_url)
+        save_houses(houses, redis_handler, filtered_house_notifier, filtered_update_notifier)
+
+    # Scrape base URLs
     for base_url in urls:
-        houses = scrape_all_pages(base_url)
-        save_houses(houses, os.getenv('SLACK_WEBHOOK_NEW'), os.getenv('SLACK_WEBHOOK_UPDATE'))
+        houses = scraper.scrape_all_pages(base_url)
+        save_houses(houses, redis_handler, new_house_notifier, update_house_notifier)
+
+    # Check for houses that haven't been seen for over 3 days and remove them
+    remove_old_houses(redis_handler, sold_notifier)
+
     print("Run finished")
