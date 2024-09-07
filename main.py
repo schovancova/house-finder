@@ -128,3 +128,4 @@ if __name__ == "__main__":
     for base_url in urls:
         houses = scrape_all_pages(base_url)
         save_houses(houses, os.getenv('SLACK_WEBHOOK_NEW'), os.getenv('SLACK_WEBHOOK_UPDATE'))
+    print("Run finished")
