@@ -13,7 +13,7 @@ from model.Scraper import Scraper
 def save_houses(links, redis_handler, new_hook, update_hook):
     visited_links = redis_handler.load_existing_keys()
     for house in links:
-        if not visited_links[house.id]:
+        if not visited_links.get(house.id):
             new_hook.send_slack(house.name, house.pretty_print_slack())
         else:
             if house.price != visited_links[house.id]['price']:
