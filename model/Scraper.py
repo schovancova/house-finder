@@ -14,24 +14,27 @@ class Scraper:
     def scrape_all_pages(self, start_url):
         """Scrape all pages starting from the initial URL."""
         result = []
-        page = 1
+        offset = 0
+        limit = 100
+        max_iter = 500
 
         while True:
-            current_url = f"{start_url}&page={page}" if page > 1 else start_url
+            current_url = f"{start_url}&limit={limit}&offset={offset}"
             print(f"Scraping page: {current_url}")
 
             response = requests.get(current_url, headers=self.headers)
-            if response.status_code == 200:
-                data = json.loads(response.content)
-                estates = data['_embedded']['estates']
-                if not estates:
-                    break
-                else:
-                    for estate in estates:
-                        result.append(Estate(estate))
-                    page += 1
+            data = json.loads(response.content)
+            estates = data['results']
+            if not estates:
+                break
             else:
-                print("Failed to fetch data")
+                for estate in estates:
+                    result.append(Estate(estate))
+                offset += limit
+            if data['pagination']['limit'] + data['pagination']['offset'] >= data['pagination']['total']:
+                break
+            max_iter -= 1
+            if max_iter < 0:
                 break
 
         return result

@@ -4,9 +4,9 @@ from datetime import datetime
 
 def get_image(estate_data):
     """Get the main image link for the estate"""
-    images = estate_data.get('_links', {}).get('images', [])
+    images = estate_data.get('advert_images', [])
     if images:
-        return images[0].get('href')
+        return 'https:' + images[0] + '?fl=res,1800,1800,1|wrm,/watermark/sreality.png,10|shr,,20|webp,60'
     return None
 
 
@@ -19,12 +19,13 @@ def get_days_since_first_seen(first_seen):
 
 class Estate:
     def __init__(self, estate_data, first_seen=None):
+        city = estate_data.get('locality').get('city_seo_name')
+        citypart = estate_data.get('locality').get('citypart_seo_name') or city
+        street = estate_data.get('locality').get('street_seo_name') or ""
+        self.location = city + "-" + citypart + "-" + street
         self.id = str(estate_data.get('hash_id'))
         self.price = estate_data.get('price')
-        self.location = estate_data.get('locality')
-        self.is_auction = estate_data.get('is_auction', False)
-        self.labels = estate_data.get('labelsAll', [None])[0]
-        self.name = estate_data.get('name')
+        self.name = estate_data.get('advert_name')
         self.link = self.generate_link(estate_data)
         self.images = get_image(estate_data)
         self.last_seen = time.time()
@@ -32,9 +33,12 @@ class Estate:
 
     def generate_link(self, estate_data):
         """Generate the link for the estate"""
-        seo_locality = estate_data.get('seo', {}).get('locality')
-        if self.id and seo_locality:
-            return f"https://www.sreality.cz/detail/prodej/dum/rodinny/{seo_locality}/{self.id}"
+        if self.id and self.location:
+            if estate_data.get('category_main_cb').get("name") == "Byty":
+                category = "byt"
+            else:
+                category = "dum"
+            return f"https://www.sreality.cz/detail/prodej/{category}/rodinny/{self.location}/{self.id}"
         return None
 
     def to_dict(self):
@@ -43,8 +47,6 @@ class Estate:
             'id': self.id,
             'price': self.price,
             'location': self.location,
-            'is_auction': self.is_auction,
-            'labels': self.labels,
             'name': self.name,
             'link': self.link,
             'images': self.images,
@@ -61,8 +63,6 @@ class Estate:
                 *🏠 {self.name}*
                 * *Price*: {price_display}
                 * *Location*: {self.location}
-                * *Auction*: {"Yes" if self.is_auction else "No"}
-                * *Label*: {self.labels if self.labels else "N/A"}
                 * *Photo*: {self.images}
                 * *Link*: {self.link}
                 * *First seen*: {days_since_first_seen} days ago

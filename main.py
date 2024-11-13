@@ -29,19 +29,19 @@ def check_slack_webhooks():
     """Check if necessary Slack webhooks are provided in environment variables."""
     webhook_new = os.getenv('SLACK_WEBHOOK_NEW')
     webhook_update = os.getenv('SLACK_WEBHOOK_UPDATE')
-    webhook_filtered = os.getenv('SLACK_WEBHOOK_FILTERED')
-    webhook_filtered_update = os.getenv('SLACK_WEBHOOK_FILTERED_UPDATE')
+    webhook_flat = os.getenv('SLACK_WEBHOOK_FLAT')
+    webhook_flat_update = os.getenv('SLACK_WEBHOOK_FLAT_UPDATE')
     webhook_sold = os.getenv('SOLD_WEBHOOK')
 
     if not webhook_new or not webhook_update:
         raise Exception("Please provide minimal Slack webhooks (SLACK_WEBHOOK_NEW, SLACK_WEBHOOK_UPDATE)")
 
-    if not webhook_filtered or not webhook_filtered_update or not webhook_sold:
+    if not webhook_flat or not webhook_flat_update or not webhook_sold:
         raise Exception(
-            "Please provide Slack webhooks for filtered houses (SLACK_WEBHOOK_FILTERED, "
-            "SLACK_WEBHOOK_FILTERED_UPDATE, SOLD_WEBHOOK)")
+            "Please provide Slack webhooks for flat houses (SLACK_WEBHOOK_FLAT, "
+            "SLACK_WEBHOOK_FLAT_UPDATE, SOLD_WEBHOOK)")
 
-    return webhook_new, webhook_update, webhook_filtered, webhook_filtered_update, webhook_sold
+    return webhook_new, webhook_update, webhook_flat, webhook_flat_update, webhook_sold
 
 
 def remove_old_houses(redis_handler, sold_webook):
@@ -75,35 +75,36 @@ if __name__ == "__main__":
     redis_handler = RedisHandler()
 
     # Check Slack webhooks
-    slack_webhook_new, slack_webhook_update, slack_webhook_filtered, slack_webhook_filtered_update, slack_webhook_sold = check_slack_webhooks()
+    slack_webhook_new, slack_webhook_update, slack_webhook_flat, slack_webhook_flat_update, slack_webhook_sold = check_slack_webhooks()
 
     # Initialize Notifiers
     new_house_notifier = Notifier(slack_webhook_new)
     update_house_notifier = Notifier(slack_webhook_update)
-    filtered_house_notifier = Notifier(slack_webhook_filtered)
-    filtered_update_notifier = Notifier(slack_webhook_filtered_update)
+    flat_house_notifier = Notifier(slack_webhook_flat)
+    flat_update_notifier = Notifier(slack_webhook_flat_update)
     sold_notifier = Notifier(slack_webhook_sold)
 
     # Initialize scraper
     scraper = Scraper()
 
     # Define URLs
-    urls = [
-        "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&distance=10&locality_district_id=72%7C73&locality_region_id=14&per_page=60&region=Rajhrad&region_entity_id=5820&region_entity_type=municipality",
-        "https://www.sreality.cz/api/cs/v2/estates?category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&distance=10&locality_district_id=73%7C72&locality_region_id=14&per_page=60&region=%C5%A0lapanice&region_entity_id=5838&region_entity_type=municipality"
+    house_urls = [
+        # Rajhrad area
+        "https://www.sreality.cz/api/v1/estates/search?category_type_cb=1&category_main_cb=2&locality_country_id=112&locality_region_id=14&locality_search_name=Rajhrad&locality_entity_type=municipality&locality_entity_id=5820&locality_radius=10&building_condition=1,6,4,5&price_from=7000000&price_to=15000000&usable_area_from=90&per_page=60",
+        # Slapanice area
+        "https://www.sreality.cz/api/v1/estates/search?category_type_cb=1&category_main_cb=2&locality_country_id=112&locality_region_id=14&locality_search_name=%C5%A0lapanice&locality_entity_type=municipality&locality_entity_id=5838&locality_radius=10&building_condition=5,6,4,1&price_from=7000000&price_to=15000000&usable_area_from=90&per_page=60"
     ]
-    filtered_urls = [
-        "https://www.sreality.cz/api/cs/v2/estates?building_condition=1%7C4%7C5%7C6&category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&czk_price_summary_order2=0%7C15000000&distance=10&estate_area=300%7C10000000000&locality_district_id=72%7C73&locality_region_id=14&per_page=60&region=Rajhrad&region_entity_id=5820&region_entity_type=municipality&usable_area=100%7C10000000000",
-        "https://www.sreality.cz/api/cs/v2/estates?building_condition=1%7C4%7C5%7C6&category_main_cb=2&category_sub_cb=37%7C39&category_type_cb=1&czk_price_summary_order2=0%7C15000000&distance=10&estate_area=300%7C10000000000&locality_district_id=73%7C72&locality_region_id=14&per_page=60&region=%C5%A0lapanice&region_entity_id=5838&region_entity_type=municipality&usable_area=100%7C10000000000"
+    flat_urls = [
+        "https://www.sreality.cz/api/v1/estates/search?category_type_cb=1&category_main_cb=1&category_sub_cb=7,6,9,8,11,10,12,16&locality_country_id=112&locality_region_id=14&locality_district_id=72&building_condition=5,6,4,1&price_from=7000000&price_to=15000000&ownership=1&parking_lots=true&garage=true&usable_area_from=90&per_page=60",
     ]
 
-    # Scrape filtered URLs first
-    for filtered_url in filtered_urls:
-        houses = scraper.scrape_all_pages(filtered_url)
-        save_houses(houses, redis_handler, filtered_house_notifier, filtered_update_notifier)
+    # Scrape flat URLs first
+    for flat_url in flat_urls:
+        houses = scraper.scrape_all_pages(flat_url)
+        save_houses(houses, redis_handler, flat_house_notifier, flat_update_notifier)
 
     # Scrape base URLs
-    for base_url in urls:
+    for base_url in house_urls:
         houses = scraper.scrape_all_pages(base_url)
         save_houses(houses, redis_handler, new_house_notifier, update_house_notifier)
 

@@ -1,6 +1,6 @@
 # Real Estate Scraper
 
-A Python-based tool to scrape real estate listings for houses on sreality, track updates, and notify via Slack.
+A Python-based tool to scrape real estate listings for houses/flats on sreality, track updates, and notify via Slack.
 
 Disclaimer: This is a hobby project, it's not going to be perfect. I just needed this to run.
 
@@ -57,14 +57,14 @@ The project is mostly geared towards searching around Brno, but feel free to adj
 
           SLACK_WEBHOOK_NEW=your_new_listing_webhook_url
           SLACK_WEBHOOK_UPDATE=your_update_webhook_url
-          SLACK_WEBHOOK_FILTERED=your_filtered_listing_webhook_url
-          SLACK_WEBHOOK_FILTERED_UPDATE=your_filtered_update_webhook_url
+          SLACK_WEBHOOK_FLAT=your_flat_listing_webhook_url
+          SLACK_WEBHOOK_FLAT_UPDATE=your_flat_update_webhook_url
           SOLD_WEBHOOK=webhook
           ```
    
           `SLACK_WEBHOOK_NEW` and  `SLACK_WEBHOOK_UPDATE` is used for all houses within a radius. 
         
-          `SLACK_WEBHOOK_FILTERED` and  `SLACK_WEBHOOK_FILTERED_UPDATE` is used for specific filter you may set up, e.g. "perfect houses". 
+          `SLACK_WEBHOOK_FLAT` and  `SLACK_WEBHOOK_FLAT_UPDATE` is used for specific filter you may set up, e.g. "perfect houses". 
             
            `SOLD_WEBHOOK` is used for updates on houses that weren't seen for at least 3 days. 
 
@@ -103,6 +103,6 @@ The project is mostly geared towards searching around Brno, but feel free to adj
 1. Go to sreality site, put in some filters on location, e.g. https://www.sreality.cz/hledani/prodej/domy/rodinne-domy,vily/brno,brno-venkov?region=Rajhrad&region-id=5820&region-typ=municipality&vzdalenost=10
 2. When loading the results, open dev tools and search for request with keyword `estates`
 3. Congrats, this is now your API call you can use. Feel free to filter on multiple cities/villages and add each API call into the `urls` in `main.py`
-2. Use `filtered_urls` as means to store your heavily filtered queries. 
+2. Use `flat_urls` as means to store your heavily flat queries. 
 
 With this setup you will see all houses in your radius, but also have a specific channel for your "ideal homes". 
