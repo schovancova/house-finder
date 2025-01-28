@@ -88,14 +88,10 @@ if __name__ == "__main__":
     scraper = Scraper()
 
     # Define URLs
-    house_urls = [
-        # Rajhrad area
-        "https://www.sreality.cz/api/v1/estates/search?category_type_cb=1&category_main_cb=2&locality_country_id=112&locality_region_id=14&locality_search_name=Rajhrad&locality_entity_type=municipality&locality_entity_id=5820&locality_radius=10&building_condition=1,6,4,5&price_from=7000000&price_to=15000000&usable_area_from=90&per_page=60",
-        # Slapanice area
-        "https://www.sreality.cz/api/v1/estates/search?category_type_cb=1&category_main_cb=2&locality_country_id=112&locality_region_id=14&locality_search_name=%C5%A0lapanice&locality_entity_type=municipality&locality_entity_id=5838&locality_radius=10&building_condition=5,6,4,1&price_from=7000000&price_to=15000000&usable_area_from=90&per_page=60"
-    ]
+    house_urls = []
     flat_urls = [
-        "https://www.sreality.cz/api/v1/estates/search?category_type_cb=1&category_main_cb=1&category_sub_cb=7,6,9,8,11,10,12,16&locality_country_id=112&locality_region_id=14&locality_district_id=72&building_condition=5,6,4,1&price_from=7000000&price_to=15000000&ownership=1&parking_lots=true&garage=true&usable_area_from=90&per_page=60",
+        # Whole Brno area
+        "https://www.sreality.cz/api/v1/estates/search?category_type_cb=1&category_main_cb=1&category_sub_cb=4,5,6,11,10,9,8,7,12,16&locality_country_id=112&locality_region_id=14&locality_district_id=72&price_to=10000000&parking_lots=true&garage=true&usable_area_from=60&limit=0&offset=0&top_timestamp_to=1738088045"
     ]
 
     # Scrape flat URLs first
