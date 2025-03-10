@@ -88,12 +88,10 @@ if __name__ == "__main__":
     scraper = Scraper()
 
     # Define URLs
-    house_urls = [
-        "https://www.sreality.cz/api/v1/estates/search?category_type_cb=1&category_main_cb=1&category_sub_cb=4,5,6,11,10,9,8,7,12,16&locality_country_id=112&locality_region_id=14&locality_district_id=72&building_condition=1,6,4,5&price_from=6000000&price_to=10000000&balcony=true&loggia=true&terrace=true&garden=true&usable_area_from=50&limit=0&offset=0&top_timestamp_to=1741021238"
-    ]
+    house_urls = []
     flat_urls = [
         # Solo flats
-        "https://www.sreality.cz/api/v1/estates/search?category_type_cb=1&category_main_cb=1&category_sub_cb=5,4,7,6,9,8,11,10,12,16&locality_country_id=112&locality_region_id=14&locality_district_id=72&building_condition=5,6,4,1&price_from=6000000&price_to=10500000&parking_lots=true&garage=true&usable_area_from=50&limit=0&offset=0&top_timestamp_to=1741021306",
+        "https://www.sreality.cz/api/v1/estates/search?category_type_cb=1&category_main_cb=1&category_sub_cb=4,5,6,11,10,9,8,7,12,16&locality_country_id=112&locality_region_id=14&locality_district_id=72&price_to=10500000&parking_lots=true&garage=true&usable_area_from=55",
        ]
 
     # Scrape flat URLs first
