@@ -88,10 +88,11 @@ if __name__ == "__main__":
     scraper = Scraper()
 
     # Define URLs
-    house_urls = []
+    house_urls = [
+        "https://www.sreality.cz/api/v1/estates/search?category_type_cb=1&category_main_cb=2&category_sub_cb=37,39&locality_country_id=112&locality_region_id=14&locality_district_id=72,73&price_from=6000000&price_to=11000000&parking_lots=true&garage=true"
+    ]
     flat_urls = [
-        # Solo flats
-        "https://www.sreality.cz/api/v1/estates/search?category_type_cb=1&category_main_cb=1&category_sub_cb=4,5,6,11,10,9,8,7,12,16&locality_country_id=112&locality_region_id=14&locality_district_id=72&price_to=10500000&parking_lots=true&garage=true&usable_area_from=55",
+        "https://www.sreality.cz/api/v1/estates/search?category_type_cb=1&category_main_cb=1&locality_country_id=112&locality_region_id=14&locality_district_id=72,73&price_from=6000000&price_to=11000000&parking_lots=true&garage=true&usable_area_from=55",
        ]
 
     # Scrape flat URLs first
